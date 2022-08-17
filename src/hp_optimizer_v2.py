@@ -1,3 +1,7 @@
+"""
+All neumerical instabilities handled
+"""
+
 from typing import List, Union
 from unittest import result
 
@@ -23,31 +27,24 @@ class DE(object):
         self.bound_control = bound_control 
 
     def init_population(self, space: Union[np.ndarray, ConfigSpace.ConfigurationSpace], dim: int) -> np.ndarray :
-        # Initialize population from standard uniform distribution and scale to bounds 
-        if self.configspace:
-            # sample from ConfigSpace s.t. conditional constraints (if any) are maintained
-            population = space.sample_configuration(size=self.pop_size)
-            if not isinstance(population, List):
-                population = [population]
-            # the population is maintained in a list-of-vector form where each ConfigSpace
-            # configuration is scaled to a unit hypercube, i.e., all dimensions scaled to [0,1]
-            population = np.array([self.configspace_to_vector(candidate) for candidate in population])
-        else:
-            population = space[:, 0] + (np.random.rand(self.pop_size, dim) * (space[:, 1] - space[:, 0]))
-    
-        # TODO: Fix inconsistency. Configspace configurations are a unit hypercube while
-        # configuration based on ndarray bounds are not normalized
+
+        # sample from ConfigSpace s.t. conditional constraints (if any) are maintained
+        population = space.sample_configuration(size=self.pop_size)
+        if not isinstance(population, List):
+            print("Knock Know")
+            exit(0)
+            population = [population]
+        # the population is maintained in a list-of-vector form where each ConfigSpace
+        # configuration is scaled to a unit hypercube, i.e., all dimensions scaled to [0,1]
+        population = np.array([self.configspace_to_vector(candidate) for candidate in population])
+
         return population
 
     def eval_population(self, obj, population: np.ndarray, budget) -> np.ndarray:
         fitness = np.zeros(self.pop_size)
         for idx, candidate in enumerate(population):
-            if self.configspace:
-                candidate = self.vector_to_configspace(candidate)
-                fitness[idx] = obj(candidate)
-            else:
-                fitness[idx] = obj(candidate)
-    
+            candidate = self.vector_to_configspace(candidate)
+            fitness[idx] = obj(candidate)
         return fitness
 
     def mutation(self, population: np.ndarray):
@@ -78,38 +75,34 @@ class DE(object):
         return population, fitness
 
     def check_bounds(self, mutant, space, dim: int) -> np.ndarray:
-        # Clip values to range defined in bounds
-        if self.configspace:
-            if self.bound_control == "random":
-                mutant = np.random.rand(dim) 
-            else:
-                # Can be exploited by optimizer if solution at clip limits 
-                mutant = [np.clip(mutant[i], 0, 1) for i in range(dim)]
-        else:
-            if self.bound_control == "random":
-                mutant = space[:, 0] + (np.random.rand(dim) * (space[:, 1] - space[:, 0]))
-            else:
-                # Can be exploited by optimizer if solution at clip limits 
-                mutant = [np.clip(mutant[i], space[i, 0], space[i, 1]) for i in range(dim)]
+        vector = mutant
+        # # Clip values to range defined in bounds
 
-        return np.asarray(mutant)
+        # if self.bound_control == "random":
+        #     mutant = np.random.rand(dim) 
+        # else:
+        #     # Can be exploited by optimizer if solution at clip limits 
+        #     mutant = [np.clip(mutant[i], 0, 1) for i in range(dim)]
+        # return np.asarray(mutant)
+        violations = np.where((vector > 1) | (vector < 0))[0]
+        if len(violations) == 0:
+            return vector
+        if self.bound_control == 'random':
+            vector[violations] = np.random.uniform(low=0.0, high=1.0, size=len(violations))
+        else:
+            vector[violations] = np.clip(vector[violations], a_min=0, a_max=1)
+        return vector
 
     def optimize(self, obj, space, budget=None, iter=10):
         self.space = space
-        self.configspace = True if isinstance(space, ConfigSpace.ConfigurationSpace) else False
-        if self.configspace:
-            self.hps = {}
-            for i, hp in enumerate(space.get_hyperparameters()):
-                # maps hyperparameter name to positional index in vector form
-                self.hps[hp.name] = i
-            
-            # Dimensionality of a hyperparameter configuration
-            dim = len(space.get_hyperparameters())
-        else:
-            # When space is a numpy ndarray of the form [[low0, high0], [low1, high1]...]
-            
-            # Dimensionality of a hyperparameter configuration
-            dim = len(space)
+
+        self.hps = {}
+        for i, hp in enumerate(space.get_hyperparameters()):
+            # maps hyperparameter name to positional index in vector form
+            self.hps[hp.name] = i
+        
+        # Dimensionality of a hyperparameter configuration
+        dim = len(space.get_hyperparameters())
 
         if self.pop_size is None:
             self.pop_size = 10 * dim # heuristic
@@ -131,8 +124,6 @@ class DE(object):
             population, fitness = self.selection(obj, children, population, fitness, budget)
         
         best_candidate = np.argmin(fitness)
-        if isinstance(population[best_candidate], np.ndarray):
-            return population[best_candidate]
         return self.vector_to_configspace(population[best_candidate])
 
     def vector_to_configspace(self, vector: np.array) -> ConfigSpace.Configuration:
@@ -200,16 +191,14 @@ class DE(object):
 
 
 def obj(x):
-    print(x)
-    if isinstance(x, ConfigSpace.Configuration):
-        y = list()
-        for name in x:
-            if type(x[name]) is str:
-                y.append(len(x[name]))
-            else:
-                y.append(x[name])
-    
-        x = y
+    y = list()
+    for name in x:
+        if type(x[name]) is str:
+            y.append(len(x[name]))
+        else:
+            y.append(x[name])
+
+    x = y
     results = np.linalg.norm(x) 
     return results
 
@@ -218,22 +207,21 @@ if __name__ == "__main__":
 
     de = DE(10)
     
+    space = ConfigSpace.ConfigurationSpace(
+        name="neuralnetwork",
+        seed=constants.SEED,
+        # space={
+        #     "a": ConfigSpace.Float("a", bounds=(0.1, 1.5), distribution=ConfigSpace.Normal(1, 10), log=True),
+        #     "b": ConfigSpace.Integer("b", bounds=(2, 10)),
+        #     "c": ConfigSpace.Categorical("c", ["mouse", "cat", "dog"], weights=[2, 1, 1]),
+        # },
+        space={
+            "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
+            "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
+            "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
+        },
+    )
 
-    space = np.asarray([(-5.0, 5.0), (-5.0, 5.0)])
-    # space = ConfigSpace.ConfigurationSpace(
-    #     name="neuralnetwork",
-    #     seed=constants.SEED,
-    #     # space={
-    #     #     "a": ConfigSpace.Float("a", bounds=(0.1, 1.5), distribution=ConfigSpace.Normal(1, 10), log=True),
-    #     #     "b": ConfigSpace.Integer("b", bounds=(2, 10)),
-    #     #     "c": ConfigSpace.Categorical("c", ["mouse", "cat", "dog"], weights=[2, 1, 1]),
-    #     # },
-    #     space={
-    #         "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
-    #         "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
-    #         #"c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
-    #     },
-    # )
     print("Best configuration", de.optimize(obj, space, iter=100))
 
 
