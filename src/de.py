@@ -1,3 +1,4 @@
+import time
 from typing import Callable, Union
 
 import ConfigSpace
@@ -219,4 +220,7 @@ if __name__ == "__main__":
     )
 
     de = DE(space, 10, rs=rs)
-    print("Best configuration", de.optimize(obj, space, iter=100))
+    start_time = time.process_time()
+
+    print(f"Best configuration  {de.optimize(obj, space, iter=100)}")
+    print(f"Time elapsed : {(time.process_time() - start_time):.4f} seconds")
