@@ -1,4 +1,4 @@
-from re import I
+import json
 import time
 from typing import Callable, Union
 
@@ -39,8 +39,7 @@ class ConfigVectorSpace(ConfigSpace.ConfigurationSpace):
         '''        
         config = impute_inactive_values(config)
 
-        #TODO: getrid of nan
-        vector = [np.nan for i in range(self.dim)]
+        vector = [None] * self.dim
         self.name_to_id = dict()
 
         for name in config:
@@ -106,9 +105,11 @@ class DE(object):
         metric = "loss",
         mode = "min",
         rs: np.random.RandomState=None,
-        bound_control = "random") -> None:
+        bound_control = "random",
+        save_path=".") -> None:
 
-        assert 0 <= mutation_factor <= 2, ValueError("mutation_factor not in range [0, 2]") 
+        assert 0 <= mutation_factor <= 2, ValueError("mutation_factor not in range [0, 2]")
+        assert mode in ["min", "max"], ValueError("Valid optimization mode in ['min', 'max']")
         
         self.space = space
         self.crossover_prob = crossover_prob
@@ -124,13 +125,15 @@ class DE(object):
 
         self.histroy = []
 
-    def init_population(self, pop_size) -> np.ndarray :
+        self._min_pop_size = 3
+
+    def _init_population(self, pop_size) -> np.ndarray :
 
         # sample from ConfigSpace s.t. conditional constraints (if any) are maintained
         population = self.space.sample_vectors(size=pop_size)
         return np.asarray(population)
     
-    def eval_population(self, obj : Callable, population: Union[np.ndarray, list] , budget) -> np.ndarray:
+    def _eval_population(self, obj : Callable, population: Union[np.ndarray, list] , budget) -> np.ndarray:
         fitness = []
 
         for candidate in population:
@@ -153,11 +156,11 @@ class DE(object):
             fitness.append(score)
             
             self.traj.append(self.inc_score)
-            self.update_history(candidate, result, budget)
+            self._update_history(candidate, result, budget)
 
         return np.asarray(fitness)
 
-    def update_history(self, candidate, result, budget):
+    def _update_history(self, candidate, result, budget):
         record = {
             "candidate": candidate.tolist(),
             "budget": budget}
@@ -165,17 +168,21 @@ class DE(object):
         record.update(result)
         self.histroy.append(record)
 
-    def mutation(self, population: np.ndarray):
-        # TODO : not necessarily purely random. sampled configurations can be distinct
-        # from candidate
-        selection = self.rs.choice(np.arange(len(population)), 3, replace=False)
-        base, a, b = population[selection]
+    def _sample(self, population, size, replace=False):
+        selection = self.rs.choice(np.arange(len(population)), size, replace=replace)
+        return population[selection]
+
+    def _mutation(self, population: np.ndarray):
+        pop_size = len(population)
+        assert pop_size > self._min_pop_size
+
+        base, a, b = self._sample(population, self._min_pop_size)
 
         diff = a - b
         mutant = base + self.mutation_factor * diff
         return mutant
 
-    def crossover(self, candidate: np.ndarray, mutant: np.ndarray) -> np.ndarray:
+    def _crossover(self, candidate: np.ndarray, mutant: np.ndarray) -> np.ndarray:
         # Sample a random value from U[0, 1] for every dimension
         p = self.rs.rand(self.space.dim)
 
@@ -183,7 +190,7 @@ class DE(object):
         child = np.asarray([mutant[i] if p[i] < self.crossover_prob else candidate[i] for i in range(self.space.dim)])
         return child
     
-    def selection(self, population: np.ndarray, children: np.ndarray, fitness: np.ndarray, children_fitness: np.ndarray):
+    def _selection(self, population: np.ndarray, children: np.ndarray, fitness: np.ndarray, children_fitness: np.ndarray):
         # Conduct parent-child competition and select new population 
         pop_size = len(population)
         for i in range(pop_size):
@@ -196,7 +203,7 @@ class DE(object):
         
         return population, fitness
     
-    def check_bounds(self, vector: np.ndarray) -> np.ndarray:
+    def _check_bounds(self, vector: np.ndarray) -> np.ndarray:
 
         violations = np.where((vector > 1) | (vector < 0))[0]
         if len(violations) == 0:
@@ -208,37 +215,65 @@ class DE(object):
             vector[violations] = np.clip(vector[violations], a_min=0, a_max=1)
         return vector
 
-    def next_generation(self, population, alt_pop=None):
+    def _next_generation(self, population, alt_pop=None):
         children = []
 
         for candidate in population:
-            mutant = self.mutation(alt_pop if alt_pop is not None else population)
-            mutant = self.check_bounds(mutant)
-            child = self.crossover(candidate, mutant)
+            # If alt_pop is None, vanilla mutation is perfomed
+            mutant = self._mutation(alt_pop if alt_pop is not None else population)
+            mutant = self._check_bounds(mutant)
+            child = self._crossover(candidate, mutant)
             children.append(child)
         
         return children
 
     def optimize(self, obj : Callable, budget=None, pop_size : Union[int,None] = None, iter: int = 10):
+        self.iter = iter
 
         if pop_size is None:
             pop_size = 10 * self.space.dim # heuristic
 
         # Initialize and Evaluate the population
-        population = self.init_population(pop_size)
-        fitness = self.eval_population(obj, population, budget)
+        population = self._init_population(pop_size)
+        fitness = self._eval_population(obj, population, budget)
 
         # Until budget is exhausted
         for t in range(iter):
-            children = self.next_generation(population)
+            children = self._next_generation(population)
 
-            children_fitness = self.eval_population(obj, children, budget)
-            population, fitness = self.selection(population, children, fitness, children_fitness)
+            children_fitness = self._eval_population(obj, children, budget)
+            population, fitness = self._selection(population, children, fitness, children_fitness)
         
         return self.inc_config
+    
+    def save_data(self):
+        data = {
+            "params" : self._init_params(),
+            "result" : {
+                "best_config": self.inc_config.get_dictionary(),
+                "best_score" : self.inc_score,
+            },
+            "traj": self.traj,
+            "history" : self.histroy,
+        }
 
+        with open("data.json", "w") as outfile:
+            json.dump(data, outfile)
+    
+    def _init_params(self):
+        params = {
+            "crossover_prob" : self.crossover_prob,
+            "mutation_factor" : self.mutation_factor,
+            "metric" : self.metric,
+            "mode" : self.mode,
+            "seed" : SEED,
+            "bound_control" : self.bound_control,
+            "iter" : self.iter
 
-class DEBH(DE):
+        }
+        return params
+
+class DEHB(DE):
     def __init__(self, 
         space: ConfigVectorSpace,
         min_budget : int = 10,
@@ -263,128 +298,143 @@ class DEBH(DE):
         self.max_budget = max_budget
         self.eta = eta
         
-        self.max_n_eliminations = int(np.floor(
+        self._all_in_one = self._get_bracket()
+        self._SH_iter = len(self._all_in_one)
+
+        self._genus = None
+    
+    def _get_bracket(self):
+
+        s_max = int(np.floor(
             np.log(self.max_budget / self.min_budget) / np.log(self.eta)))
 
-        self.max_n_stages = self.max_n_eliminations + 1
-    
-    def get_bracket(self, iteration):
-        """
-        Compute the bracket (stage wise num of configurations and budget) given the SH iteration number
-        """
-        n_eliminations = self.max_n_eliminations - (iteration % self.max_n_stages)
-        n_stages = n_eliminations + 1
-
-        init_n_configs = int(np.ceil((self.max_n_stages * (self.eta ** n_eliminations)) / n_stages))
-        init_budget_per_config = int(self.max_budget / (self.min_budget * (self.eta ** n_eliminations)))
+        N = int(np.ceil(self.eta ** s_max))
+        b_0 = int(self.max_budget / (self.min_budget * (self.eta ** s_max)))
 
         n_configs_list = []   # stage-wise number of configuration for current SH iteration
         budget_list = []    # stage-wise budget per configuration for current SH iteration
 
-        for i in range(n_stages):
-            num_configs = int(np.floor(init_n_configs / (self.eta ** i)))
-            budget = init_budget_per_config / self.eta ** iteration
+        for i in range(s_max):
+            N_i = int(np.floor(N / (self.eta ** i)))
+            b = b_0 * (self.eta ** i)
+            
+            n_configs_list.append(N_i)
+            budget_list.append(b)
 
-            n_configs_list.append(num_configs)
-            budget_list.append(budget)
+        bracket = tuple(zip(n_configs_list, budget_list))
+        return bracket
 
-        return n_configs_list, budget_list
+    def _init_eval_genus(self, obj):
+        genus = dict()
 
-    def select_promotions(self, species, lower_species, lower_species_fitness):
+        for (pop_size, budget) in self._all_in_one:
+            species = dict()
+            species["population"] = self._init_population(pop_size)
+            species["fitness"] = self._eval_population(obj, species["population"], budget)
+            
+            #genus[budget] = species
+            genus[budget] = self._sort_species(species)
+        return genus
+    
+    def _sort_species(self, species):
+        species = species.copy()
+        ranking = np.argsort(species["fitness"])
+        if self.mode == "max":
+            ranking = ranking[::-1]
+        
+        species["population"] = species["population"][ranking]
+        species["fitness"] = species["fitness"][ranking]
+
+        return species
+
+    def _select_promotions(self, target, previous):
         promotions = []
-        promotions_fitness = []
+        pop_size = len(target["population"])
 
-        pop_size = len(species)
-
-        ranking = np.argsort(lower_species_fitness)
-        for individual, fitness in zip(lower_species[ranking], lower_species_fitness[ranking]):
-            # If individual already in species, then ignore it to minimize fn_evals
-            if np.any(np.all(individual == species, axis=1)):
+        for individual in previous["population"]:
+            # If individual already in target, then ignore it to minimize fn_evals
+            if np.any(np.all(individual == target["population"], axis=1)):
                 continue
-    
+            
             promotions.append(individual)
-            # Fitness of promoted individual at lower budget
-            promotions_fitness.append(fitness)
         
-        if len(promotions) > pop_size:
+        if len(promotions) >= pop_size:
             promotions = promotions[:pop_size]
-            promotions_fitness = promotions_fitness[:pop_size]
         else:
-            return lower_species[ranking][:pop_size], lower_species_fitness[ranking][:pop_size]
-            #raise BufferError("Not enough to promote")
+            return previous["population"][:pop_size]
+            # raise BufferError("Not enough to promote")
             # Can simply pick top pop_size many individuals even 
-            # if duplicates exist in species
+            # if duplicates exist in target
         
-        return np.asarray(promotions), np.asarray(promotions_fitness)
+        return np.asarray(promotions)
     
-    def get_alt_population(self, genus, species, lower_species, lower_species_fitness):
-        pop_size = len(species)
+    def _get_alt_population(self, target, previous):
 
-        ranking = np.argsort(lower_species_fitness)[:pop_size]
-        alt_pop = lower_species[ranking]
+        # stage == 0, previous is None
+        if previous is None:
+            
+            # Edge case where stage==0, but target population too small
+            # for vanilla mutation, so we need an alt_pop that is not None
+            if len(target) < self._min_pop_size :
+                previous = target
+            else:
+                return None
 
-        if len(alt_pop) < 3:
-            filler = 3 - len(alt_pop) + 1
-            alt_pop = self.concat_populations(*genus.values(), alt_pop)
+        pop_size = len(target["population"])
+        alt_pop = previous["population"][:pop_size]
+
+        if len(alt_pop) < self._min_pop_size:
+            filler_size = self._min_pop_size - len(alt_pop) + 1
+            filler_pop = self._sample(self.global_pupulation, filler_size)
+
+            alt_pop = np.concatenate([filler_pop, alt_pop])
         
         return alt_pop
+    
+    def optimize(self, obj, iter = 10):
 
-    def concat_populations(self, *args):
-        return np.concatenate(args)
-
-    def run(self, obj, iter = 10):
-
-        genus = {}
-        fitness = {}
-
-        SH_iter = self.max_n_stages
+        self.iter = iter
+        self.genus = self._init_eval_genus(obj)
 
         for i in range(iter): # DEHB iteration
-            for j in range(SH_iter): # SH iteration
+            for j in range(self._SH_iter): # SH iterations
+                
+                previous = None
+                bracket = self._all_in_one[j:]
 
-                n_configs_list, budget_list = self.get_bracket(j)
+                for stage, (pop_size, budget) in enumerate(bracket): # stages in a bracket
+                    target =  self.genus[budget]
 
-                for stage, (faction_size, budget) in enumerate(zip(n_configs_list, budget_list)):
-                    
-                    species =  genus.setdefault(budget, self.init_population(faction_size))
-                    species_fitness = fitness.setdefault(budget, 
-                        self.eval_population(obj, species, budget))
-
+                    # Only True for first DEHB iteration and non-inital SH stage
                     promotion = True if i == 0 and stage > 0 else False
                     if promotion:
-                        print(f"Initial DEHB iteration and stage {stage}")
-                        lower_species = genus[budget_list[stage-1]]
-                        print(f" lower_species len{len(lower_species)}")
-                        lower_species_fitness = fitness[budget_list[stage-1]]
-                        children, _ = self.select_promotions(species, lower_species, lower_species_fitness)
+                       children = self._select_promotions(target, previous)
                     else:
-                        alt_pop = None
-                        mutation_type = "vanilla" if stage == 0 else "hybrid"
-                        if mutation_type == "vanilla":
-                            children = self.next_generation(species, alt_pop)
-                        else:
-                            alt_pop = self.get_alt_population(genus, species, lower_species, lower_species_fitness)
-                            children = self.next_generation(species, alt_pop)
+                        alt_pop = self._get_alt_population(target, previous)
+                        children = self._next_generation(target["population"], alt_pop)
 
-                    children_fitness = self.eval_population(obj, children, budget)
-                    genus[budget], fitness[budget] = self.selection(species, children, species_fitness, children_fitness)
+                    children_fitness = self._eval_population(obj, children, budget)
+                    target["population"], target["fitness"] = self._selection(target["population"], children, target["fitness"], children_fitness)
+
+                    target = self._sort_species(target)
+                    self.genus[budget] = target
+                    previous = target
         
-        return self.get_best_config(genus, fitness)
-                    
+        return self.inc_config
     
-    def get_best_config(self, genus, fitness):
-        best_overall_candidate = None
-        best_overall_candidate_fitness = float("inf")
+    def _init_params(self):
+        params = {
+            "min_budget" : self.min_budget,
+            "max_budget" : self.max_budget,
+            "eta"  : self.eta
+        }
+        params.update(super()._init_params())
+        return params
 
-        for budget, species_fitness in fitness.items():
-            best_candidate = np.argmin(species_fitness)
-            best_fitness = species_fitness[best_candidate]
-
-            if best_fitness < best_overall_candidate_fitness:
-                best_overall_candidate = genus[budget][best_candidate]
-                best_overall_candidate_fitness = best_fitness
-            
-        return self.space.to_config(best_overall_candidate)
+    @property
+    def global_pupulation(self):
+        assert self.genus is not None, "No genus initialized"
+        return np.concatenate([species["population"] for species in self.genus.values()])
 
 
 def obj(x, budget):
@@ -403,41 +453,29 @@ def obj(x, budget):
 if __name__ == "__main__":
 
     rs = np.random.RandomState(seed=SEED)
-    # space = ConfigVectorSpace(
-    #     name="neuralnetwork",
-    #     seed=SEED,
-    #     space={
-    #         "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
-    #         "dropout": ConfigSpace.UniformFloatHyperparameter("dropout", lower=0, upper=0.5, default_value=0.3),
-    #         #"reg_const": ConfigSpace.Float("lambda",),
-    #         "reg_type": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
-    #         "depth": ConfigSpace.Integer("depth", bounds=[2, 9]),
-    #         "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[16, 32, 64, 128], default_value=16)
-    #     },
-    # )
-
-    # de = DE(space, 10, rs=rs)
-    # start_time = time.process_time()
-
-    # print(f"Best configuration  {de.optimize(obj, space, iter=100)}")
-    # print(f"Time elapsed : {(time.process_time() - start_time):.4f} seconds")
-
-    
     
     space = ConfigVectorSpace(
         name="neuralnetwork",
         seed=SEED,
-        # space={
-        #     "a": ConfigSpace.Float("a", bounds=(0.1, 1.5), distribution=ConfigSpace.Normal(1, 10), log=True),
-        #     "b": ConfigSpace.Integer("b", bounds=(2, 10)),
-        #     "c": ConfigSpace.Categorical("c", ["mouse", "cat", "dog"], weights=[2, 1, 1]),
-        # },
         space={
-            "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
-            "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
-            "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
+            "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
+            "dropout": ConfigSpace.UniformFloatHyperparameter("dropout", lower=0, upper=0.5, default_value=0.3),
+            #"reg_const": ConfigSpace.Float("lambda",),
+            "reg_type": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
+            "depth": ConfigSpace.Integer("depth", bounds=[2, 9]),
+            "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[16, 32, 64, 128], default_value=16)
         },
+        # space={
+        #     "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
+        #     "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
+        #     "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
+        # },
     )
 
-    dehb = DEBH(space, rs=rs)
-    print("Best configuration", dehb.run(obj, iter=100))
+    dehb = DEHB(space, rs=rs)
+
+    start_time = time.process_time()
+
+    print(f"Best configuration  {dehb.optimize(obj, iter=100)}")
+    print(f"Time elapsed : {(time.process_time() - start_time):.4f} seconds")
+    # dehb.save_data()
