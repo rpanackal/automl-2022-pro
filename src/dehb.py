@@ -127,7 +127,7 @@ class DE(object):
 
         self._min_pop_size = 3
 
-    def _init_population(self, pop_size) -> np.ndarray :
+    def _init_population(self, pop_size : int) -> np.ndarray :
 
         # sample from ConfigSpace s.t. conditional constraints (if any) are maintained
         population = self.space.sample_vectors(size=pop_size)
@@ -324,7 +324,7 @@ class DEHB(DE):
         bracket = tuple(zip(n_configs_list, budget_list))
         return bracket
 
-    def _init_eval_genus(self, obj):
+    def _init_eval_genus(self, obj : Callable):
         genus = dict()
 
         for (pop_size, budget) in self._all_in_one:
@@ -336,7 +336,7 @@ class DEHB(DE):
             genus[budget] = self._sort_species(species)
         return genus
     
-    def _sort_species(self, species):
+    def _sort_species(self, species : np.ndarray):
         species = species.copy()
         ranking = np.argsort(species["fitness"])
         if self.mode == "max":
@@ -347,7 +347,7 @@ class DEHB(DE):
 
         return species
 
-    def _select_promotions(self, target, previous):
+    def _select_promotions(self, target : dict, previous : dict):
         promotions = []
         pop_size = len(target["population"])
 
@@ -368,7 +368,7 @@ class DEHB(DE):
         
         return np.asarray(promotions)
     
-    def _get_alt_population(self, target, previous):
+    def _get_alt_population(self, target : dict, previous : dict):
 
         # stage == 0, previous is None
         if previous is None:
@@ -391,7 +391,7 @@ class DEHB(DE):
         
         return alt_pop
     
-    def optimize(self, obj, iter = 10):
+    def optimize(self, obj : Callable, iter : int = 10):
 
         self.iter = iter
         self.genus = self._init_eval_genus(obj)
@@ -437,7 +437,7 @@ class DEHB(DE):
         return np.concatenate([species["population"] for species in self.genus.values()])
 
 
-def obj(x, budget):
+def obj(x : ConfigSpace.Configuration, budget : int):
     """Sample objective function"""
     y = list()
     for name in x:
@@ -465,11 +465,6 @@ if __name__ == "__main__":
             "depth": ConfigSpace.Integer("depth", bounds=[2, 9]),
             "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[16, 32, 64, 128], default_value=16)
         },
-        # space={
-        #     "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
-        #     "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
-        #     "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
-        # },
     )
 
     dehb = DEHB(space, rs=rs)
