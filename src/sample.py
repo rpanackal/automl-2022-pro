@@ -22,3 +22,17 @@ for i, hp in enumerate(cs.get_hyperparameters()):
     hps[hp.name] = i
 print(hps)
 print(configs.get_array())
+
+print(None or 0)
+
+a = {
+    "x" : 1,
+    "y" : 2,
+}
+
+b ={
+    "u" : 3,
+    "v" : 4
+}
+a.update(b)
+print(a)
