@@ -126,6 +126,8 @@ class DE(object):
         self.histroy = []
 
         self._min_pop_size = 3
+        self._eval_counter = -1
+        self._iteration_counter = -1
 
     def _init_population(self, pop_size : int) -> np.ndarray :
 
@@ -157,6 +159,7 @@ class DE(object):
             
             self.traj.append(self.inc_score)
             self._update_history(candidate, result, budget)
+            self._eval_counter += 1
 
         return np.asarray(fitness)
 
@@ -227,8 +230,8 @@ class DE(object):
         
         return children
 
-    def optimize(self, obj : Callable, budget=None, pop_size : Union[int,None] = None, iter: int = 10):
-        self.iter = iter
+    def optimize(self, obj : Callable, budget=None, pop_size : Union[int,None] = None, limit: int = 10, unit : str = "iter"):
+        self._start_timer()
 
         if pop_size is None:
             pop_size = 10 * self.space.dim # heuristic
@@ -238,7 +241,9 @@ class DE(object):
         fitness = self._eval_population(obj, population, budget)
 
         # Until budget is exhausted
-        for t in range(iter):
+        while not self._is_termination(limit, unit):
+            self._iteration_counter += 1
+
             children = self._next_generation(population)
 
             children_fitness = self._eval_population(obj, children, budget)
@@ -246,6 +251,25 @@ class DE(object):
         
         return self.inc_config
     
+    def _start_timer(self):
+        self._wall_clock_start = time.time()
+
+    def _is_termination(self, limit : int, unit : str):
+        assert unit in ["hr", "min", "sec", "evals", "iter"], ValueError("Unrecognized unit given")
+
+        if unit in ["hr", "min", "sec"]:
+            scale = {
+                "sec" : 1,
+                "min" : 60,
+                "hr"  : 60 * 60
+            }
+            diff = time.time() - self._wall_clock_start
+            return diff >= limit * scale[unit]
+        elif unit == "evals":
+            return self._eval_counter + 1 > limit
+        else:
+            return self._iteration_counter + 1 > limit
+
     def save_data(self):
         data = {
             "params" : self._init_params(),
@@ -268,7 +292,8 @@ class DE(object):
             "mode" : self.mode,
             "seed" : SEED,
             "bound_control" : self.bound_control,
-            "iter" : self.iter
+            "iters" : self._iteration_counter,
+            "evals" : self._eval_counter
 
         }
         return params
@@ -391,12 +416,14 @@ class DEHB(DE):
         
         return alt_pop
     
-    def optimize(self, obj : Callable, iter : int = 10):
+    def optimize(self, obj : Callable, limit : int = 10, unit : str = "iter"):
+        self._start_timer()
 
-        self.iter = iter
         self.genus = self._init_eval_genus(obj)
 
-        for i in range(iter): # DEHB iteration
+        while not self._is_termination(limit, unit): # DEHB iteration
+            self._iteration_counter += 1
+
             for j in range(self._SH_iter): # SH iterations
                 
                 previous = None
@@ -406,7 +433,7 @@ class DEHB(DE):
                     target =  self.genus[budget]
 
                     # Only True for first DEHB iteration and non-inital SH stage
-                    promotion = True if i == 0 and stage > 0 else False
+                    promotion = True if self._iteration_counter == 0 and stage > 0 else False
                     if promotion:
                        children = self._select_promotions(target, previous)
                     else:
@@ -421,7 +448,7 @@ class DEHB(DE):
                     previous = target
         
         return self.inc_config
-    
+            
     def _init_params(self):
         params = {
             "min_budget" : self.min_budget,
@@ -429,6 +456,7 @@ class DEHB(DE):
             "eta"  : self.eta
         }
         params.update(super()._init_params())
+        print(params)
         return params
 
     @property
@@ -457,13 +485,18 @@ if __name__ == "__main__":
     space = ConfigVectorSpace(
         name="neuralnetwork",
         seed=SEED,
+        # space={
+        #     "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
+        #     "dropout": ConfigSpace.UniformFloatHyperparameter("dropout", lower=0, upper=0.5, default_value=0.3),
+        #     #"reg_const": ConfigSpace.Float("lambda",),
+        #     "reg_type": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
+        #     "depth": ConfigSpace.Integer("depth", bounds=[2, 9]),
+        #     "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[16, 32, 64, 128], default_value=16)
+        # },
         space={
-            "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
-            "dropout": ConfigSpace.UniformFloatHyperparameter("dropout", lower=0, upper=0.5, default_value=0.3),
-            #"reg_const": ConfigSpace.Float("lambda",),
-            "reg_type": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
-            "depth": ConfigSpace.Integer("depth", bounds=[2, 9]),
-            "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[16, 32, 64, 128], default_value=16)
+            "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
+            "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
+            "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
         },
     )
 
@@ -471,6 +504,6 @@ if __name__ == "__main__":
 
     start_time = time.process_time()
 
-    print(f"Best configuration  {dehb.optimize(obj, iter=100)}")
-    print(f"Time elapsed : {(time.process_time() - start_time):.4f} seconds")
+    print(f"Best configuration  {dehb.optimize(obj, limit=100, unit='iter')}")
+    print(f"Time elapsed (CPU time): {(time.process_time() - start_time):.4f} seconds")
     # dehb.save_data()

@@ -36,3 +36,15 @@ b ={
 }
 a.update(b)
 print(a)
+
+import time
+
+
+limit = 1
+wall_clock_start = time.time()
+time.sleep(10)
+wall_clock_end = time.time()
+diff = wall_clock_end - wall_clock_start
+
+print(diff)
+#return diff >= limit
