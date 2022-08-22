@@ -354,6 +354,29 @@ class DEHB(DE):
         bracket = tuple(zip(n_configs_list, budget_list))
         return bracket
 
+    def _get_bracket_v2(self, iteration):
+
+        s_max = int(np.floor(
+            np.log(self.max_budget / self.min_budget) / np.log(self.eta)))
+        s = s_max - (iteration % (s_max + 1))
+
+        N = int(np.ceil((s_max + 1 ) / (s + 1) * (self.eta ** s)))
+
+        b_0 = int((self.max_budget / self.min_budget) * (1 / self.eta ** s))
+
+        n_configs_list = []   # stage-wise number of configuration for current SH iteration
+        budget_list = []    # stage-wise budget per configuration for current SH iteration
+
+        for i in range(s):
+            N_i = int(np.floor(N / (self.eta ** i)))
+            b = b_0 * (self.eta ** i)
+            
+            n_configs_list.append(N_i)
+            budget_list.append(b)
+
+        bracket = tuple(zip(n_configs_list, budget_list))
+        return bracket
+
     def _init_eval_genus(self, obj : Callable):
         genus = dict()
 

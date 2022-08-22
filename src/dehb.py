@@ -326,6 +326,7 @@ class DEHB(DE):
         
         self.min_budget = min_budget
         self.max_budget = max_budget
+
         self.eta = eta
         
         self._all_in_one = self._get_bracket()
@@ -334,26 +335,17 @@ class DEHB(DE):
         self._genus = None
     
     def _get_bracket(self):
+        s_max = int(np.floor(np.log(self.max_budget / self.min_budget) / np.log(self.eta)))
 
-        s_max = int(np.floor(
-            np.log(self.max_budget / self.min_budget) / np.log(self.eta)))
-
+        budgets = (self.max_budget * np.power(self.eta,-np.linspace(start=s_max, stop=0, num=s_max + 1))).tolist()
+        budgets = list(map(int, budgets))
+        
         N = int(np.ceil(self.eta ** s_max))
-        b_0 = int(self.max_budget / (self.min_budget * (self.eta ** s_max)))
+        n_configs = [max(int(N*(self.eta**(-i))), 1) for i in range(s_max + 1)]
 
-        n_configs_list = []   # stage-wise number of configuration for current SH iteration
-        budget_list = []    # stage-wise budget per configuration for current SH iteration
-
-        for i in range(s_max):
-            N_i = int(np.floor(N / (self.eta ** i)))
-            b = b_0 * (self.eta ** i)
-            
-            n_configs_list.append(N_i)
-            budget_list.append(b)
-
-        bracket = tuple(zip(n_configs_list, budget_list))
+        bracket = tuple(zip(n_configs, budgets))
         return bracket
-
+    
     def _init_eval_genus(self, obj : Callable, **kwargs):
         genus = dict()
 
@@ -513,10 +505,10 @@ if __name__ == "__main__":
         # },
     )
 
-    dehb = DEHB(space, rs=rs)
+    dehb = DEHB(space, min_budget=1, max_budget=1000, rs=rs)
 
     start_time = time.process_time()
 
-    print(f"Best configuration  {dehb.optimize(obj, limit=100,  unit='iter', dataset_id=0)}")
+    print(f"Best configuration  {dehb.optimize(obj, limit=1,  unit='hr', dataset_id=0)}")
     print(f"Time elapsed (CPU time): {(time.process_time() - start_time):.4f} seconds")
     # dehb.save_data()
