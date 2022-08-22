@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from typing import Callable, Union
 
@@ -89,6 +90,9 @@ class ConfigVectorSpace(ConfigSpace.ConfigurationSpace):
                 else:
                     param_value = float(param_value)
             new_config[hyper.name] = param_value
+
+        #self.check_configuration(ConfigSpace.Configuration(self, values=new_config))
+        #new_config = impute_inactive_values(ConfigSpace.Configuration(self, values=new_config))
         # the mapping from unit hypercube to the actual config space may lead to illegal
         # configurations based on conditions defined, which need to be deactivated/removed
         new_config = deactivate_inactive_hyperparameters(
@@ -118,6 +122,7 @@ class DE(object):
         self.mode = mode
         self.rs = rs
         self.bound_control = bound_control
+        self.save_path=save_path
         
         self.traj = []
         self.inc_config = None
@@ -281,7 +286,7 @@ class DE(object):
             "history" : self.histroy,
         }
 
-        with open("data.json", "w") as outfile:
+        with open(os.path.join(self.save_path, "data.json"), "w") as outfile:
             json.dump(data, outfile)
     
     def _init_params(self):
@@ -435,7 +440,7 @@ class DEHB(DE):
                     # Only True for first DEHB iteration and non-inital SH stage
                     promotion = True if self._iteration_counter == 0 and stage > 0 else False
                     if promotion:
-                       children = self._select_promotions(target, previous)
+                        children = self._select_promotions(target, previous)
                     else:
                         alt_pop = self._get_alt_population(target, previous)
                         children = self._next_generation(target["population"], alt_pop)
@@ -485,19 +490,24 @@ if __name__ == "__main__":
     space = ConfigVectorSpace(
         name="neuralnetwork",
         seed=SEED,
-        # space={
-        #     "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
-        #     "dropout": ConfigSpace.UniformFloatHyperparameter("dropout", lower=0, upper=0.5, default_value=0.3),
-        #     #"reg_const": ConfigSpace.Float("lambda",),
-        #     "reg_type": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
-        #     "depth": ConfigSpace.Integer("depth", bounds=[2, 9]),
-        #     "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[16, 32, 64, 128], default_value=16)
-        # },
+        # TODO : find distribution for drop_0, drop_1 and reg_const
+        # SUGGESTIONS : drop_0 and drop_1 conditional on layer, as deeper layers need larger dropout
         space={
-            "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
-            "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
-            "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
+            "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
+            "dropout_0": ConfigSpace.Float('dropout_0', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
+            #"dropout_0": ConfigSpace.Float('dropout_0', bounds=(0, 0.99), default=0.25, distribution=ConfigSpace.Beta(alpha=2, beta=4)),
+            "dropout_1": ConfigSpace.Float('dropout_1', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
+            #"dropout_1": ConfigSpace.Float('dropout_1', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Beta(alpha=2, beta=3)),
+            "reg_const": ConfigSpace.Float("lambda", bounds=(0, 5), default=0.1),
+            "penalty": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
+            "depth": ConfigSpace.UniformIntegerHyperparameter("depth", lower=2, upper=9, default_value=2),
+            "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[16, 32, 64, 128], default_value=16)
         },
+        # space={
+        #     "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
+        #     "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
+        #     "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
+        # },
     )
 
     dehb = DEHB(space, rs=rs)
