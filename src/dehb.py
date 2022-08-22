@@ -106,8 +106,8 @@ class DE(object):
         space : ConfigVectorSpace,
         crossover_prob : float = 0.9,
         mutation_factor : float = 0.8,
-        metric = "loss",
-        mode = "min",
+        metric = "f1_Score",
+        mode = "max",
         rs: np.random.RandomState=None,
         bound_control = "random",
         save_path=".") -> None:
@@ -126,7 +126,7 @@ class DE(object):
         
         self.traj = []
         self.inc_config = None
-        self.inc_score = float("inf")
+        self.inc_score = float("inf") if self.mode == "min" else float("-inf")
 
         self.histroy = []
 
@@ -140,15 +140,15 @@ class DE(object):
         population = self.space.sample_vectors(size=pop_size)
         return np.asarray(population)
     
-    def _eval_population(self, obj : Callable, population: Union[np.ndarray, list] , budget) -> np.ndarray:
+    def _eval_population(self, obj : Callable, population: Union[np.ndarray, list] , budget, **kwargs) -> np.ndarray:
         fitness = []
 
         for candidate in population:
             config = self.space.to_config(candidate)
-            result = obj(config, budget)
+            result = obj(config, budget, **kwargs)
 
-            assert isinstance(result, dict), "Objective function must return a dictionary"
-            assert self.metric in result, "Given mteric not found in dictionary returned by the objective function"
+            assert isinstance(result, dict), TypeError("Objective function must return a dictionary")
+            assert self.metric in result, KeyError(f"Given mteric '{self.metric}' not found in dictionary {result}, returned by the objective function")
             score = result[self.metric]
 
             condition = {
@@ -182,7 +182,7 @@ class DE(object):
 
     def _mutation(self, population: np.ndarray):
         pop_size = len(population)
-        assert pop_size > self._min_pop_size
+        assert pop_size > self._min_pop_size, ValueError(f"Population too small ( < DE()._min_pop_size = {self._min_pop_size}) for mutation")
 
         base, a, b = self._sample(population, self._min_pop_size)
 
@@ -235,7 +235,7 @@ class DE(object):
         
         return children
 
-    def optimize(self, obj : Callable, budget=None, pop_size : Union[int,None] = None, limit: int = 10, unit : str = "iter"):
+    def optimize(self, obj : Callable, budget=None, pop_size : Union[int,None] = None, limit: int = 10, unit : str = "iter", **kwargs):
         self._start_timer()
 
         if pop_size is None:
@@ -243,7 +243,7 @@ class DE(object):
 
         # Initialize and Evaluate the population
         population = self._init_population(pop_size)
-        fitness = self._eval_population(obj, population, budget)
+        fitness = self._eval_population(obj, population, budget, **kwargs)
 
         # Until budget is exhausted
         while not self._is_termination(limit, unit):
@@ -311,8 +311,8 @@ class DEHB(DE):
         eta : int = 2,
         crossover_prob: float = 0.9, 
         mutation_factor: float = 0.8, 
-        metric = "loss",
-        mode = "min",
+        metric = "f1_score",
+        mode = "max",
         rs: np.random.RandomState=None,
         bound_control = "random") -> None:
 
@@ -354,13 +354,13 @@ class DEHB(DE):
         bracket = tuple(zip(n_configs_list, budget_list))
         return bracket
 
-    def _init_eval_genus(self, obj : Callable):
+    def _init_eval_genus(self, obj : Callable, **kwargs):
         genus = dict()
 
         for (pop_size, budget) in self._all_in_one:
             species = dict()
             species["population"] = self._init_population(pop_size)
-            species["fitness"] = self._eval_population(obj, species["population"], budget)
+            species["fitness"] = self._eval_population(obj, species["population"], budget, **kwargs)
             
             #genus[budget] = species
             genus[budget] = self._sort_species(species)
@@ -421,10 +421,10 @@ class DEHB(DE):
         
         return alt_pop
     
-    def optimize(self, obj : Callable, limit : int = 10, unit : str = "iter"):
+    def optimize(self, obj : Callable, limit : int = 10, unit : str = "iter", **kwargs):
         self._start_timer()
 
-        self.genus = self._init_eval_genus(obj)
+        self.genus = self._init_eval_genus(obj, **kwargs)
 
         while not self._is_termination(limit, unit): # DEHB iteration
             self._iteration_counter += 1
@@ -445,7 +445,7 @@ class DEHB(DE):
                         alt_pop = self._get_alt_population(target, previous)
                         children = self._next_generation(target["population"], alt_pop)
 
-                    children_fitness = self._eval_population(obj, children, budget)
+                    children_fitness = self._eval_population(obj, children, budget, **kwargs)
                     target["population"], target["fitness"] = self._selection(target["population"], children, target["fitness"], children_fitness)
 
                     target = self._sort_species(target)
@@ -466,12 +466,14 @@ class DEHB(DE):
 
     @property
     def global_pupulation(self):
-        assert self.genus is not None, "No genus initialized"
+        assert self.genus is not None, AssertionError("No populaiton in genus initialized")
         return np.concatenate([species["population"] for species in self.genus.values()])
 
 
-def obj(x : ConfigSpace.Configuration, budget : int):
+def obj(x : ConfigSpace.Configuration, budget : int, **kwargs):
     """Sample objective function"""
+    dataset_id = kwargs["dataset_id"]
+
     y = list()
     for name in x:
         if type(x[name]) is str:
@@ -479,9 +481,9 @@ def obj(x : ConfigSpace.Configuration, budget : int):
         else:
             y.append(x[name])
 
-    loss = np.linalg.norm(y) 
+    f1_score = np.linalg.norm(y) 
     
-    return {"loss":loss}
+    return {"f1_score":f1_score}
 
 if __name__ == "__main__":
 
@@ -494,14 +496,15 @@ if __name__ == "__main__":
         # SUGGESTIONS : drop_0 and drop_1 conditional on layer, as deeper layers need larger dropout
         space={
             "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
-            "dropout_0": ConfigSpace.Float('dropout_0', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
-            #"dropout_0": ConfigSpace.Float('dropout_0', bounds=(0, 0.99), default=0.25, distribution=ConfigSpace.Beta(alpha=2, beta=4)),
-            "dropout_1": ConfigSpace.Float('dropout_1', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
+            "dropout_first": ConfigSpace.Float('dropout_first', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
+            "dropout_second": ConfigSpace.Float('dropout_second', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
             #"dropout_1": ConfigSpace.Float('dropout_1', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Beta(alpha=2, beta=3)),
-            "reg_const": ConfigSpace.Float("lambda", bounds=(0, 5), default=0.1),
-            "penalty": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
-            "depth": ConfigSpace.UniformIntegerHyperparameter("depth", lower=2, upper=9, default_value=2),
-            "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[16, 32, 64, 128], default_value=16)
+            "weight_decay": ConfigSpace.Float("weight_decay", bounds=(0, 5), default=0.1),
+            #"penalty": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
+            "n_blocks": ConfigSpace.UniformIntegerHyperparameter("n_blocks", lower=2, upper=6, default_value=2),
+            "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[64, 128, 512], default_value=64),
+            "d_main": ConfigSpace.OrdinalHyperparameter("d_main", sequence=[32, 64, 128,256,512], default_value=128),
+            "d_hidden" : ConfigSpace.OrdinalHyperparameter("d_hidden", sequence=[64, 128, 256, 512], default_value=64)
         },
         # space={
         #     "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
@@ -514,6 +517,6 @@ if __name__ == "__main__":
 
     start_time = time.process_time()
 
-    print(f"Best configuration  {dehb.optimize(obj, limit=100, unit='iter')}")
+    print(f"Best configuration  {dehb.optimize(obj, limit=100,  unit='iter', dataset_id=0)}")
     print(f"Time elapsed (CPU time): {(time.process_time() - start_time):.4f} seconds")
     # dehb.save_data()
