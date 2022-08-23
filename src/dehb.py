@@ -204,7 +204,8 @@ class DE(object):
         for i in range(pop_size):
             condition = {
                 "max" : children_fitness[i] >= fitness[i],
-                "min" : children_fitness[i] <= fitness[i]}
+                "min" : children_fitness[i] <= fitness[i]
+                }
             if condition[self.mode]:
                 population[i] = children[i]
                 fitness[i] = children_fitness[i]
@@ -335,17 +336,18 @@ class DEHB(DE):
         self._genus = None
     
     def _get_bracket(self):
+        # max num of eliminations in a bracket 
         s_max = int(np.floor(np.log(self.max_budget / self.min_budget) / np.log(self.eta)))
 
-        budgets = (self.max_budget * np.power(self.eta,-np.linspace(start=s_max, stop=0, num=s_max + 1))).tolist()
-        budgets = list(map(int, budgets))
-        
-        N = int(np.ceil(self.eta ** s_max))
-        n_configs = [max(int(N*(self.eta**(-i))), 1) for i in range(s_max + 1)]
+        # num of downsampling left at stage i in range(s_max + 1)
+        n_downsampling = np.linspace(start=s_max, stop=0, num=s_max + 1)
 
-        bracket = tuple(zip(n_configs, budgets))
+        budgets = (self.max_budget * np.power(self.eta, -n_downsampling)).tolist()
+        n_configs = (np.power(self.eta, n_downsampling)).tolist()
+
+        bracket = tuple((int(n), int(b)) for n, b in zip(n_configs, budgets))
         return bracket
-    
+
     def _init_eval_genus(self, obj : Callable, **kwargs):
         genus = dict()
 
@@ -509,6 +511,6 @@ if __name__ == "__main__":
 
     start_time = time.process_time()
 
-    print(f"Best configuration  {dehb.optimize(obj, limit=1,  unit='hr', dataset_id=0)}")
+    print(f"Best configuration  {dehb.optimize(obj, limit=1,  unit='sec', dataset_id=0)}")
     print(f"Time elapsed (CPU time): {(time.process_time() - start_time):.4f} seconds")
     # dehb.save_data()

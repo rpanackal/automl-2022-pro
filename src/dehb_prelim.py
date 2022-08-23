@@ -377,6 +377,46 @@ class DEHB(DE):
         bracket = tuple(zip(n_configs_list, budget_list))
         return bracket
 
+    def _get_bracket_v3(self):
+        s_max = int(np.floor(np.log(self.max_budget / self.min_budget) / np.log(self.eta)))
+
+        budgets = (self.max_budget * np.power(self.eta, -np.linspace(start=s_max, stop=0, num=s_max + 1))).tolist()
+        budgets = list(map(int, budgets))
+        
+        N = int(np.ceil(self.eta ** s_max))
+        n_configs = [max(int(N*(self.eta**(-i))), 1) for i in range(s_max + 1)]
+
+        bracket = tuple(zip(n_configs, budgets))
+        return bracket
+    
+    def _get_bracket_v4(self, iteration):
+        
+        # max num of eliminations in a bracket 
+        s_max = int(np.floor(
+            np.log(self.max_budget / self.min_budget) / np.log(self.eta)))
+
+        # max num of stages in a bracket == num of SH_iter
+        n_stages = s_max + 1
+
+        # max num of configurations in stage one of a bracket
+        N_0 = int(np.ceil(self.eta ** s_max)) 
+
+        # min budget per configuration in stage one of a bracket
+        b_0 = int((self.max_budget) * (1 / self.eta ** s_max))
+
+        n_configs_list = []   # stage-wise number of configuration for current SH iteration
+        budget_list = []    # stage-wise budget per configuration for current SH iteration
+
+        for i in range(n_stages):
+            N_i = int(np.floor(N_0 / (self.eta ** i)))
+            b = b_0 * (self.eta ** i)
+            
+            n_configs_list.append(N_i)
+            budget_list.append(b)
+
+        bracket = tuple(zip(n_configs_list, budget_list))
+        return bracket
+
     def _init_eval_genus(self, obj : Callable):
         genus = dict()
 
