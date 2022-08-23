@@ -110,9 +110,10 @@ class DE(object):
         mode = "max",
         rs: np.random.RandomState=None,
         bound_control = "random",
-        save_path=".",
+        save_path : Union[str, None] =".",
         save_freq=10) -> None:
 
+        assert 0 <= crossover_prob <= 1, ValueError("crossover_prob given is not a probability")
         assert 0 <= mutation_factor <= 2, ValueError("mutation_factor not in range [0, 2]")
         assert mode in ["min", "max"], ValueError("Valid optimization mode in ['min', 'max']")
         
@@ -294,8 +295,9 @@ class DE(object):
             "history" : self.histroy,
         }
 
-        with open(os.path.join(self.save_path, "data.json"), "w") as outfile:
-            json.dump(data, outfile)
+        if self.save_path is not None:
+            with open(os.path.join(self.save_path, "data.json"), "w") as outfile:
+                json.dump(data, outfile)
     
     def _init_params(self):
         params = {
@@ -517,6 +519,6 @@ if __name__ == "__main__":
 
     start_time = time.process_time()
 
-    print(f"Best configuration  {dehb.optimize(obj, limit=1,  unit='sec', dataset_id=0)}")
+    print(f"Best configuration  {dehb.optimize(obj, limit=1,  unit='hr', dataset_id=0)}")
     print(f"Time elapsed (CPU time): {(time.process_time() - start_time):.4f} seconds")
     # dehb.save_data()
