@@ -110,7 +110,8 @@ class DE(object):
         mode = "max",
         rs: np.random.RandomState=None,
         bound_control = "random",
-        save_path=".") -> None:
+        save_path=".",
+        save_freq=10) -> None:
 
         assert 0 <= mutation_factor <= 2, ValueError("mutation_factor not in range [0, 2]")
         assert mode in ["min", "max"], ValueError("Valid optimization mode in ['min', 'max']")
@@ -122,7 +123,8 @@ class DE(object):
         self.mode = mode
         self.rs = rs
         self.bound_control = bound_control
-        self.save_path=save_path
+        self.save_path = save_path
+        self.save_freq = save_freq
         
         self.traj = []
         self.inc_config = None
@@ -161,10 +163,15 @@ class DE(object):
                 self.inc_score = score
 
             fitness.append(score)
-            
+            # trajectory updated at every fn eval, regardless of save_freq
             self.traj.append(self.inc_score)
-            self._update_history(candidate, result, budget)
+
             self._eval_counter += 1
+
+            # Update history and wrtie data every 'save_freq' objective fn evaluations
+            if self._eval_counter % self.save_freq == 0:
+                self._update_history(candidate, result, budget)
+                self.save_data()
 
         return np.asarray(fitness)
 
@@ -455,7 +462,6 @@ class DEHB(DE):
             "eta"  : self.eta
         }
         params.update(super()._init_params())
-        print(params)
         return params
 
     @property
