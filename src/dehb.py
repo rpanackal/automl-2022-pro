@@ -110,7 +110,7 @@ class DE(object):
         mode = "max",
         rs: np.random.RandomState=None,
         bound_control = "random",
-        save_path : Union[str, None] =".",
+        save_path : Union[str, None] ="./data.json",
         save_freq=10) -> None:
 
         assert 0 <= crossover_prob <= 1, ValueError("crossover_prob given is not a probability")
@@ -304,7 +304,10 @@ class DE(object):
         }
 
         if self.save_path is not None:
-            with open(os.path.join(self.save_path, "data.json"), "w") as outfile:
+            # path = os.path.join(self.save_path, "data.json")
+            # os.makedirs(save_path, exist_ok=True)
+            os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
+            with open(self.save_path, "w+") as outfile:
                 json.dump(data, outfile)
     
     def _init_params(self):
@@ -332,15 +335,20 @@ class DEHB(DE):
         metric = "f1_score",
         mode = "max",
         rs: np.random.RandomState=None,
-        bound_control = "random") -> None:
+        bound_control = "random",
+        save_path : Union[str, None] ="./data.json",
+        save_freq=10) -> None:
 
         super().__init__(space=space,
             crossover_prob=crossover_prob, 
             mutation_factor=mutation_factor,
             metric=metric,
             mode=mode,
-            bound_control=bound_control, 
-            rs=rs)
+            rs=rs,
+            bound_control=bound_control,
+            save_path=save_path,
+            save_freq=save_freq
+            )
         
         self.min_budget = min_budget
         self.max_budget = max_budget
@@ -488,7 +496,6 @@ class DEHB(DE):
 def obj(x : ConfigSpace.Configuration, budget : int, **kwargs):
     """Sample objective function"""
     dataset_id = kwargs["dataset_id"]
-    print(x.get_dictionary())
 
     y = list()
     for name in x:

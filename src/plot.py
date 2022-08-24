@@ -25,5 +25,5 @@ def plot(path_to_json):
     plt.show()
 
 
-path_to_json = "/home/karma/Documents/AutoML Project/runs/40592/0.json"
+path_to_json = "/home/karma/Documents/AutoML Project/runs/40595.json"
 plot(path_to_json)
