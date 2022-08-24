@@ -42,9 +42,14 @@ import time
 
 limit = 1
 wall_clock_start = time.time()
-time.sleep(10)
+#time.sleep(10)
 wall_clock_end = time.time()
 diff = wall_clock_end - wall_clock_start
 
 print(diff)
 #return diff >= limit
+
+a = {"a":10, "b":20}
+l = list(a.keys())
+
+print(a[l])

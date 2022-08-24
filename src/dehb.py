@@ -128,6 +128,7 @@ class DE(object):
         self.save_freq = save_freq
         
         self.traj = []
+        self.runtime = []
         self.inc_config = None
         self.inc_score = float("inf") if self.mode == "min" else float("-inf")
 
@@ -166,6 +167,7 @@ class DE(object):
             fitness.append(score)
             # trajectory updated at every fn eval, regardless of save_freq
             self.traj.append(self.inc_score)
+            self.runtime.append(self._time_elapsed())
 
             self._eval_counter += 1
 
@@ -267,6 +269,11 @@ class DE(object):
     
     def _start_timer(self):
         self._wall_clock_start = time.time()
+    
+    def _time_elapsed(self):
+        # time difference in sec
+        diff = time.time() - self._wall_clock_start
+        return diff
 
     def _is_termination(self, limit : int, unit : str):
         assert unit in ["hr", "min", "sec", "evals", "iter"], ValueError("Unrecognized unit given")
@@ -277,7 +284,7 @@ class DE(object):
                 "min" : 60,
                 "hr"  : 60 * 60
             }
-            diff = time.time() - self._wall_clock_start
+            diff = self._time_elapsed()
             return diff >= limit * scale[unit]
         elif unit == "evals":
             return self._eval_counter + 1 > limit
@@ -292,6 +299,7 @@ class DE(object):
                 "best_score" : self.inc_score,
             },
             "traj": self.traj,
+            "runtime": self.runtime,
             "history" : self.histroy,
         }
 
@@ -429,33 +437,38 @@ class DEHB(DE):
 
         self.genus = self._init_eval_genus(obj, **kwargs)
 
-        while not self._is_termination(limit, unit): # DEHB iteration
-            self._iteration_counter += 1
+        try:
+            while True: # DEHB iteration
+                self._iteration_counter += 1
 
-            for j in range(self._SH_iter): # SH iterations
-                
-                previous = None
-                bracket = self._all_in_one[j:]
+                for j in range(self._SH_iter): # SH iterations
+                    
+                    previous = None
+                    bracket = self._all_in_one[j:]
 
-                for stage, (pop_size, budget) in enumerate(bracket): # stages in a bracket
-                    target =  self.genus[budget]
+                    for stage, (pop_size, budget) in enumerate(bracket): # stages in a bracket
+                        if self._is_termination(limit, unit):
+                            raise StopIteration
+                        
+                        target =  self.genus[budget]
 
-                    # Only True for first DEHB iteration and non-inital SH stage
-                    promotion = True if self._iteration_counter == 0 and stage > 0 else False
-                    if promotion:
-                        children = self._select_promotions(target, previous)
-                    else:
-                        alt_pop = self._get_alt_population(target, previous)
-                        children = self._next_generation(target["population"], alt_pop)
+                        # Only True for first DEHB iteration and non-inital SH stage
+                        promotion = True if self._iteration_counter == 0 and stage > 0 else False
+                        if promotion:
+                            children = self._select_promotions(target, previous)
+                        else:
+                            alt_pop = self._get_alt_population(target, previous)
+                            children = self._next_generation(target["population"], alt_pop)
 
-                    children_fitness = self._eval_population(obj, children, budget, **kwargs)
-                    target["population"], target["fitness"] = self._selection(target["population"], children, target["fitness"], children_fitness)
+                        children_fitness = self._eval_population(obj, children, budget, **kwargs)
+                        target["population"], target["fitness"] = self._selection(target["population"], children, target["fitness"], children_fitness)
 
-                    target = self._sort_species(target)
-                    self.genus[budget] = target
-                    previous = target
-        
-        return self.inc_config
+                        target = self._sort_species(target)
+                        self.genus[budget] = target
+                        previous = target
+
+        except StopIteration : 
+            return self.inc_config
             
     def _init_params(self):
         params = {
@@ -475,6 +488,7 @@ class DEHB(DE):
 def obj(x : ConfigSpace.Configuration, budget : int, **kwargs):
     """Sample objective function"""
     dataset_id = kwargs["dataset_id"]
+    print(x.get_dictionary())
 
     y = list()
     for name in x:
@@ -496,29 +510,29 @@ if __name__ == "__main__":
         seed=SEED,
         # TODO : find distribution for drop_0, drop_1 and reg_const
         # SUGGESTIONS : drop_0 and drop_1 conditional on layer, as deeper layers need larger dropout
-        space={
-            "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
-            "dropout_first": ConfigSpace.Float('dropout_first', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
-            "dropout_second": ConfigSpace.Float('dropout_second', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
-            #"dropout_1": ConfigSpace.Float('dropout_1', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Beta(alpha=2, beta=3)),
-            "weight_decay": ConfigSpace.Float("weight_decay", bounds=(0, 5), default=0.1),
-            #"penalty": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
-            "n_blocks": ConfigSpace.UniformIntegerHyperparameter("n_blocks", lower=2, upper=6, default_value=2),
-            "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[64, 128, 512], default_value=64),
-            "d_main": ConfigSpace.OrdinalHyperparameter("d_main", sequence=[32, 64, 128,256,512], default_value=128),
-            "d_hidden" : ConfigSpace.OrdinalHyperparameter("d_hidden", sequence=[64, 128, 256, 512], default_value=64)
-        },
         # space={
-        #     "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
-        #     "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
-        #     "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
+        #     "lr": ConfigSpace.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-1, log=True, default_value=1e-3),
+        #     "dropout_first": ConfigSpace.Float('dropout_first', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
+        #     "dropout_second": ConfigSpace.Float('dropout_second', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Normal(mu=0.5, sigma=0.35)),
+        #     #"dropout_1": ConfigSpace.Float('dropout_1', bounds=(0, 0.9), default=0.34, distribution=ConfigSpace.Beta(alpha=2, beta=3)),
+        #     "weight_decay": ConfigSpace.Float("weight_decay", bounds=(0, 5), default=0.1),
+        #     #"penalty": ConfigSpace.CategoricalHyperparameter("reg_type", choices=["l1", "l2"], weights=[0.5, 0.5], default_value="l2"),
+        #     "n_blocks": ConfigSpace.UniformIntegerHyperparameter("n_blocks", lower=2, upper=6, default_value=2),
+        #     "batch_size": ConfigSpace.OrdinalHyperparameter("batch_size", sequence=[64, 128, 512], default_value=64),
+        #     "d_main": ConfigSpace.OrdinalHyperparameter("d_main", sequence=[32, 64, 128,256,512], default_value=128),
+        #     "d_hidden" : ConfigSpace.OrdinalHyperparameter("d_hidden", sequence=[64, 128, 256, 512], default_value=64)
         # },
+        space={
+            "a": ConfigSpace.UniformFloatHyperparameter("a", lower=-5.0, upper=5.0),
+            "b": ConfigSpace.UniformFloatHyperparameter("b", lower=-5.0, upper=5.0),
+            "c": ConfigSpace.Categorical("c", ["mouse", "cat", "elephant"], weights=[2, 1, 1])
+        },
     )
 
     dehb = DEHB(space, min_budget=1, max_budget=1000, rs=rs)
 
     start_time = time.process_time()
 
-    print(f"Best configuration  {dehb.optimize(obj, limit=1,  unit='hr', dataset_id=0)}")
+    print(f"Best configuration  {dehb.optimize(obj, limit=1,  unit='sec', dataset_id=0)}")
     print(f"Time elapsed (CPU time): {(time.process_time() - start_time):.4f} seconds")
     # dehb.save_data()
