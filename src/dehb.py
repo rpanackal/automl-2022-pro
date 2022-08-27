@@ -168,12 +168,12 @@ class DE(object):
             # trajectory updated at every fn eval, regardless of save_freq
             self.traj.append(self.inc_score)
             self.runtime.append(self._time_elapsed())
+            self._update_history(candidate, result, budget)
 
             self._eval_counter += 1
 
             # Update history and wrtie data every 'save_freq' objective fn evaluations
             if self._eval_counter % self.save_freq == 0:
-                self._update_history(candidate, result, budget)
                 self.save_data()
 
         return np.asarray(fitness)
