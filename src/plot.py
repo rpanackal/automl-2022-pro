@@ -106,7 +106,7 @@ def best_config_score_list(save_dir):
         dd["RF/score"].append(random_forest_baseline[int(dataset_id)]["score"])
         dd["MLP/score"].append(mlp_scores[int(dataset_id)]["score"])
         dd["DEHB/score"].append(d["result"]["best_score"])
-        
+        print(d["result"]["best_config"])
         for key, value in d["result"]["best_config"].items():
             dd[key].append(value)
     
@@ -120,5 +120,5 @@ def best_config_score_list(save_dir):
 
 save_dir = "/home/karma/Documents/AutoML Project/runs"
 save_path = save_dir + "/40596.json"
-plot(save_path)
+#plot(save_path)
 best_config_score_list(save_dir)
