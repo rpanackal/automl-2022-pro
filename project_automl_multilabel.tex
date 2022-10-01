@@ -1,0 +1,94 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage{a4wide}
+\usepackage[hyperfootnotes=false]{hyperref}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+
+\input{../common.tex}
+
+\newcommand{\due}{{\bf This project is due on \duedatepaper.} }
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+
+\fancyhf{}
+\lhead{Due: \duedatepaper}
+\chead{{\bf AutoML}\\Final Project}
+\rhead{\lectors\\ \semester}
+\cfoot{Page \thepage}
+
+\begin{document}
+
+\tfp
+
+	\section*{Automated Machine Learning for Multi-Label classification}
+
+        Multi-label classification is type of supervised learning task.
+        For each observation we have $m$ binary labels $y^{(i)}_1, \dots, y^{(i)}_m$ and a feature vector $x^{(i)}$.
+        A brief introduction to multi-label classification can be found here:\\
+		\url{http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.104.9401}.
+		\\
+		Your task is to build an Automl tool for multi-label classification outperforming a simple random forest baseline on a subset of a standard multi-label classification benchmark:\\
+
+		For simplicity we defined a subset that is already uploaded to OpenML and can easily be downloaded:
+		\begin{center}
+			\begin{tabular}{lr}
+				Name & data\_id \\
+				\hline
+				enron & 40590 \\
+				genbase & 40591 \\
+				image & 40592 \\
+				langLog & 40593 \\
+				reuters & 40594 \\
+				scene & 40595 \\
+				slashdot & 40596 \\
+				yeast & 40597 \\
+				birds & 40588 \\
+				emotions & 40589
+			\end{tabular}
+		\end{center}
+
+        You are allowed a \textbf{maximum runtime of 1 hour} per dataset.
+		In the end, you should convince us that you outperformed a random forest baseline by your approach.
+		To this end, you could consider the following:
+		\begin{itemize}
+			\item Classifiers that inherently support multi-label classification.
+            \item Extend other classifiers to \texttt{MultiOutputClassifier} and \texttt{ClassifierChain}.
+            \item Data preprocessing and feature engineering.
+			\item Ensembling and stacking.
+			\item Efficient optimization, either by BO or EAs.
+			\item Multi-fidelity optimization based on increasing data subsamples.
+		\end{itemize}
+		\textbf{You are not allowing to (re-)use existing AutoML frameworks with multi-label capabilities.}
+		\noindent
+		To evaluate your approach please choose the way you evaluate well; you could consider the following:
+		\begin{itemize}
+			\item Measure and compare against the performance of the random forest;
+			\item Use a reasonable number of folds for crossvalidation, both internally for the AutoML system and externally for evaluation;
+			\item Plot the performance of your AutoML approach over time;
+		\end{itemize}
+
+		You are allowed to use all scripts and tools you already know from the exercises; however, you are not limited to them.
+		Overall, you should respect the following constraints:
+		\begin{itemize}
+			\item \textbf{Metric:}
+			\begin{itemize}
+				\item The final performance has to be measured in terms of $F_1$-score.
+			\end{itemize}
+			\item \textbf{Experimental Constraints:}
+			\begin{itemize}
+				\item Your code for making design decisions should run no longer than $1$ hour per data set (without additional validation) on a single machine.
+				\item You can use any kind of hardware that is available to you. For example, you could also consider using Google Colab (which repeatedly offers a VM with a GPU for at most 12h for free) or Amazon SageMaker (which offers quite some resources for free if you are a first-time customer). \textit{Don't forget to state in your paper what kind of hardware you used!}
+			\end{itemize}
+		\end{itemize}
+
+
+        \gccs
+
+		\newpage
+		\grading
+
+
+%\vspace*{\fill}\\
+\end{document}
